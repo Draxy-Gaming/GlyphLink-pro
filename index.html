@@ -27,17 +27,13 @@
         body { font-family: 'Share Tech Mono', monospace; background-color: #020617; overscroll-behavior: none; }
         h1, h2, h3, .brand-font { font-family: 'Orbitron', sans-serif; }
         .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
-        .glass-panel { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(16px); border: 1px solid rgba(56, 189, 248, 0.2); }
+        .glass-panel { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(16px); border: 1px solid rgba(56, 189, 248, 0.2); }
         .scan-line { position: absolute; width: 100%; height: 2px; background: #0ea5e9; box-shadow: 0 0 20px #0ea5e9; animation: scanning 2s ease-in-out infinite; }
         @keyframes scanning { 0% { top: 10%; opacity: 0; } 50% { opacity: 1; } 100% { top: 90%; opacity: 0; } }
         .neon-text { text-shadow: 0 0 10px rgba(56, 189, 248, 0.6); }
         .holo-btn { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3); box-shadow: 0 0 15px rgba(56, 189, 248, 0.1); }
         .holo-btn:active { background: rgba(56, 189, 248, 0.3); }
-        
-        /* Shape definitions for CSS rendering if needed */
-        .shape-box { clip-path: inset(0 0 0 0); }
-        .shape-tri { clip-path: polygon(50% 0%, 0% 100%, 100% 100%); }
-        .shape-cir { clip-path: circle(50% at 50% 50%); }
+        @media (max-width: 640px) { .forge-input { font-size: 16px !important; } }
     </style>
 </head>
 <body class="text-slate-200 antialiased overflow-hidden select-none">
@@ -47,9 +43,9 @@
         const { useState, useEffect, useRef } = React;
         const { createRoot } = ReactDOM;
 
-        // --- SYSTEM CONFIG ---
+        // Service Worker Reg
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.log(e)));
         }
 
         const firebaseConfig = {
@@ -66,9 +62,11 @@
         const db = firebase.firestore();
         const APP_ID = 'glyphlink-pro-v1'; 
         const PUBLIC_PATH = `artifacts/${APP_ID}/public/data/glyphs`;
+        
+        // --- YOUR API KEY ---
         const GEMINI_KEY = "AIzaSyDRr14gl3bxeyT_6kKA4647QbvWP_VKr8Y"; 
 
-        // --- AUDIO & HAPTIC ENGINE ---
+        // --- AUDIO ENGINE ---
         const sfx = {
             click: () => playTone(1200, 'square', 0.05),
             error: () => playTone(150, 'sawtooth', 0.3),
@@ -90,7 +88,7 @@
             const gain = ctx.createGain();
             osc.type = type;
             osc.frequency.setValueAtTime(freq, ctx.currentTime);
-            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.setValueAtTime(0.05, ctx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -122,9 +120,13 @@
 
             useEffect(() => {
                 let stream = null;
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: {ideal:1920} } })
-                    .then(s => { stream = s; if(videoRef.current) videoRef.current.srcObject = s; })
-                    .catch(e => console.log("Cam Error"));
+                const start = async () => {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                        if(videoRef.current) videoRef.current.srcObject = stream;
+                    } catch(e) { console.error(e); }
+                };
+                start();
                 return () => stream?.getTracks().forEach(t => t.stop());
             }, []);
 
@@ -132,32 +134,59 @@
                 if (status === 'SCANNING') return;
                 sfx.click();
                 setStatus('SCANNING');
+                
                 try {
                     const video = videoRef.current;
                     const canvas = canvasRef.current;
+                    if (!video || !canvas) throw new Error("CAMERA INIT FAIL");
+
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
                     canvas.getContext('2d').drawImage(video, 0, 0);
-                    const b64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+                    // Use 0.4 quality for faster mobile upload
+                    const b64 = canvas.toDataURL('image/jpeg', 0.4).split(',')[1];
 
                     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_KEY}`, {
                         method: 'POST',
-                        body: JSON.stringify({ contents: [{ parts: [{ text: "Find alphanumeric ID (e.g. ALPHA-1). Return ONLY code or 'NONE'." }, { inlineData: { mimeType: "image/jpeg", data: b64 } }] }] })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: "Find one alphanumeric code (like A1, ALPHA-9, BOX-2). Return ONLY the code. If unclear, return 'NONE'." },
+                                    { inlineData: { mimeType: "image/jpeg", data: b64 } }
+                                ]
+                            }]
+                        })
                     });
+
+                    if (!res.ok) throw new Error(`API ERROR: ${res.status}`);
+                    
                     const data = await res.json();
                     const code = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
 
                     if (code && code !== 'NONE') {
+                        // Fuzzy search: check if found code is in glyphs or glyph code is in found text
                         const match = glyphs.find(g => code.includes(g.code) || g.code.includes(code));
                         if (match) {
                             sfx.success();
-                            sfx.speak(`Target Acquired. ${match.code}`);
+                            sfx.speak(`Signal detected. ${match.code}`);
                             setActiveGlyph(match);
-                        } else { sfx.error(); throw new Error("UNKNOWN SIGNAL"); }
-                    } else { sfx.error(); throw new Error("NO GLYPH"); }
+                        } else {
+                            throw new Error(`UNREGISTERED: ${code}`);
+                        }
+                    } else {
+                        throw new Error("NO GLYPH FOUND");
+                    }
                 } catch (e) {
-                    // Visual feedback only
-                } finally { setStatus('READY'); }
+                    sfx.error();
+                    const el = document.createElement('div');
+                    el.className = "fixed top-20 left-1/2 -translate-x-1/2 glass-panel border-red-500/50 text-red-400 px-6 py-3 rounded-full text-xs font-bold z-[100] tracking-widest animate-bounce";
+                    el.innerText = e.message;
+                    document.body.appendChild(el);
+                    setTimeout(() => el.remove(), 2500);
+                } finally {
+                    setStatus('READY');
+                }
             };
 
             return (
@@ -207,11 +236,10 @@
                 setBusy(true);
                 try {
                     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_KEY}`, {
-                        method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: `Generate one 2-word sci-fi code (e.g. VOID-X) for: "${content}". Return ONLY the code.` }] }] })
+                        method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: `Generate a 2-word sci-fi code (e.g. VOID-X) for: "${content}". Return ONLY the code.` }] }] })
                     });
                     const data = await res.json();
-                    const gen = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
-                    setCode(gen || 'ERR-GEN');
+                    setCode(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase() || 'ERR-GEN');
                     sfx.success();
                 } catch(e) { sfx.error(); } finally { setBusy(false); }
             };
@@ -222,16 +250,20 @@
                 setBusy(true);
                 try {
                     let finalCode = code.trim().toUpperCase();
-                    if (!finalCode) await autoGen(); // Retry gen if empty
+                    if (!finalCode) {
+                         // Emergency generation inside submit if user skipped button
+                         await autoGen();
+                         // Wait slightly or rely on state? Let's just block submit if failed
+                         if(!code) return; 
+                    }
                     
-                    await db.collection(PUBLIC_PATH).doc(finalCode).set({
-                        code: finalCode, content, shape,
+                    await db.collection(PUBLIC_PATH).doc(finalCode || code).set({
+                        code: finalCode || code, content, shape,
                         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                         creator: user.uid
                     });
                     sfx.success();
-                    sfx.speak("Data Inscribed");
-                    alert("SAVED");
+                    sfx.speak("Inscription Complete");
                     if (onComplete) onComplete();
                     else { setCode(''); setContent(''); }
                 } catch(e) { sfx.error(); alert("ERR"); } finally { setBusy(false); }
@@ -252,12 +284,10 @@
                                 ))}
                             </div>
                         </div>
-
                         <div>
                             <label className="text-[10px] font-bold text-sky-500 tracking-[0.2em] uppercase mb-2 block">Payload</label>
                             <textarea value={content} onChange={e => setContent(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5 text-sm font-mono text-white focus:border-sky-500 outline-none transition-all holo-btn" placeholder="Data..." rows="3" required />
                         </div>
-
                         <div className="relative">
                              <label className="text-[10px] font-bold text-sky-500 tracking-[0.2em] uppercase mb-2 block">Designation</label>
                              <div className="flex gap-2">
@@ -265,7 +295,6 @@
                                 <button type="button" onClick={autoGen} className="p-4 bg-slate-800 border border-slate-700 rounded-2xl text-sky-400 hover:bg-slate-700"><Icon path={paths.sparkles} /></button>
                              </div>
                         </div>
-
                         <button disabled={busy} className="w-full py-6 bg-sky-600 rounded-2xl font-black text-xs tracking-[0.4em] text-white shadow-xl shadow-sky-900/40 active:scale-95 transition-all">
                             {busy ? "PROCESSING..." : editData ? "OVERWRITE" : "INSCRIBE"}
                         </button>
@@ -314,14 +343,11 @@
             const handleDelete = async (id) => {
                 if(confirm("DELETE NEURAL LINK?")) {
                     await db.collection(PUBLIC_PATH).doc(id).delete();
-                    sfx.error(); // Deletion sound
+                    sfx.error();
                 }
             };
 
-            const handleEdit = (glyph) => {
-                setEditingGlyph(glyph);
-                setView('FORGE');
-            };
+            const handleEdit = (glyph) => { setEditingGlyph(glyph); setView('FORGE'); };
 
             return (
                 <div className="h-screen w-full flex flex-col bg-[#020617]">
