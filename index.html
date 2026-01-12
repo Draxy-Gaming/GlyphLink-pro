@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>GlyphLink PRO</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#020617">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Share Tech Mono', monospace; background-color: #020617; overscroll-behavior: none; }
+        h1, h2, h3, .brand-font { font-family: 'Orbitron', sans-serif; }
+        .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
+        .scan-grid { background-image: linear-gradient(rgba(14, 165, 233, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(14, 165, 233, 0.1) 1px, transparent 1px); background-size: 25px 25px; }
+        .scan-line { position: absolute; width: 100%; height: 2px; background: #0ea5e9; box-shadow: 0 0 15px #0ea5e9; animation: scanning 2s ease-in-out infinite; }
+        @keyframes scanning { 0% { top: 15%; opacity: 0; } 50% { opacity: 1; } 100% { top: 85%; opacity: 0; } }
+        .glass-panel { background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(14, 165, 233, 0.2); }
+        .loading-pulse { animation: pulse-glow 1s infinite; }
+        @keyframes pulse-glow { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
+        @media (max-width: 640px) { .forge-input { font-size: 16px !important; } }
+    </style>
+</head>
+<body class="text-slate-200 antialiased overflow-hidden select-none">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => console.log('SW registration failed:', err));
+            });
+        }
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyABW016QX_pqQbPFi7-wqEoSSIHPOvwdM8",
+            authDomain: "glyphlink-pro.firebaseapp.com",
+            projectId: "glyphlink-pro",
+            storageBucket: "glyphlink-pro.firebasestorage.app",
+            messagingSenderId: "1028534875508",
+            appId: "1:1028534875508:web:5cdcb3e884da88c8012821"
+        };
+
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        
+        const APP_ID = 'glyphlink-pro-v1'; 
+        const PUBLIC_PATH = `artifacts/${APP_ID}/public/data/glyphs`;
+        const GEMINI_KEY = "AIzaSyDRr14gl3bxeyT_6kKA4647QbvWP_VKr8Y"; 
+
+        const Icon = ({ path, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {path}
+            </svg>
+        );
+        const paths = {
+            cam: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></>,
+            plus: <><path d="M5 12h14"/><path d="M12 5v14"/></>,
+            list: <><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></>,
+            zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>,
+            close: <><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="18" y2="6"/></>,
+            sparkles: <path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3Z" />,
+        };
+
+        const LinkLens = ({ glyphs }) => {
+            const videoRef = useRef(null);
+            const canvasRef = useRef(null);
+            const [activeGlyph, setActiveGlyph] = useState(null);
+            const [status, setStatus] = useState('READY');
+
+            useEffect(() => {
+                let stream = null;
+                const start = async () => {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ 
+                            video: { facingMode: "environment", width: { ideal: 1920 } } 
+                        });
+                        if (videoRef.current) videoRef.current.srcObject = stream;
+                    } catch (e) { console.error("Camera fail"); }
+                };
+                start();
+                return () => stream?.getTracks().forEach(t => t.stop());
+            }, []);
+
+            const scan = async () => {
+                if (status === 'SCANNING') return;
+                setStatus('SCANNING');
+                try {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
+                    const b64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_KEY}`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: "Find an alphanumeric ID like 'ALPHA-1' in this image. Return ONLY the code or 'NONE'." },
+                                    { inlineData: { mimeType: "image/jpeg", data: b64 } }
+                                ]
+                            }]
+                        })
+                    });
+                    const data = await res.json();
+                    const code = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
+
+                    if (code && code !== 'NONE') {
+                        const match = glyphs.find(g => code.includes(g.code) || g.code.includes(code));
+                        if (match) setActiveGlyph(match);
+                        else throw new Error("SIGNAL NOT IN DATABASE");
+                    } else throw new Error("SCAN FAILED");
+                } catch (e) {
+                    alert(e.message);
+                } finally { setStatus('READY'); }
+            };
+
+            return (
+                <div className="relative h-full bg-black">
+                    <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover opacity-60" />
+                    <canvas ref={canvasRef} className="hidden" />
+                    <div className="absolute inset-0 pointer-events-none scan-grid opacity-20"></div>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-64 h-64 border-2 border-sky-500/10 rounded-3xl relative">
+                            <div className="absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 border-sky-400 rounded-tl-2xl"></div>
+                            {status === 'SCANNING' && <div className="scan-line"></div>}
+                        </div>
+                    </div>
+                    <div className="absolute bottom-0 w-full p-8 safe-pb flex flex-col items-center bg-gradient-to-t from-black to-transparent">
+                        {activeGlyph ? (
+                            <div className="glass-panel p-6 rounded-[2.5rem] w-full max-w-sm animate-in zoom-in-95">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-2xl font-black brand-font text-white">{activeGlyph.code}</h3>
+                                    <button onClick={() => setActiveGlyph(null)}><Icon path={paths.close} className="text-slate-500" /></button>
+                                </div>
+                                <div className="bg-black/40 p-4 rounded-2xl mb-5 font-mono text-xs text-sky-400 break-all">{activeGlyph.content}</div>
+                                <button onClick={() => window.open(activeGlyph.content, '_blank')} className="w-full py-4 bg-sky-600 rounded-2xl font-black text-[10px] tracking-[0.4em]">CONNECT</button>
+                            </div>
+                        ) : (
+                            <button onClick={scan} className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all ${status === 'SCANNING' ? 'border-sky-500 scale-90' : 'border-white/20'}`}>
+                                <div className={`w-14 h-14 rounded-full ${status === 'SCANNING' ? 'bg-sky-500 loading-pulse' : 'bg-white'}`}></div>
+                            </button>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const Forge = ({ user }) => {
+            const [code, setCode] = useState('');
+            const [content, setContent] = useState('');
+            const [busy, setBusy] = useState(false);
+
+            const submit = async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                try {
+                    let finalCode = code.trim().toUpperCase();
+                    if (!finalCode) {
+                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_KEY}`, {
+                            method: 'POST',
+                            body: JSON.stringify({ contents: [{ parts: [{ text: `Generate a 2-word cyber ID (e.g. CORE-X) for: "${content}". Return ONLY the code.` }] }] })
+                        });
+                        const data = await res.json();
+                        finalCode = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
+                    }
+                    
+                    await db.collection(PUBLIC_PATH).doc(finalCode).set({
+                        code: finalCode, content, timestamp: firebase.firestore.FieldValue.serverTimestamp(), creator: user.uid
+                    });
+                    setCode(''); setContent('');
+                    alert(`FORGED: ${finalCode}`);
+                } catch (e) { alert("FAILED"); } finally { setBusy(false); }
+            };
+
+            return (
+                <div className="p-8 h-full flex flex-col pt-16">
+                    <h1 className="text-4xl font-black brand-font text-white mb-10">FORGE</h1>
+                    <form onSubmit={submit} className="space-y-8">
+                        <textarea required value={content} onChange={e => setContent(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5 text-sm font-mono text-sky-100 forge-input" placeholder="Payload Data..." rows="4" />
+                        <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-5 text-xl font-bold tracking-widest forge-input" placeholder="CODE (OPTIONAL)" />
+                        <button disabled={busy} className="w-full py-6 bg-sky-600 rounded-2xl font-black text-[11px] tracking-[0.5em]">{busy ? "ENCRYPTING..." : "FORGE GLYPH"}</button>
+                    </form>
+                </div>
+            );
+        };
+
+        const Registry = ({ glyphs }) => (
+            <div className="p-8 pt-16 h-full overflow-y-auto">
+                <h1 className="text-3xl font-black brand-font text-white mb-10">ARCHIVE</h1>
+                <div className="space-y-4 pb-32">
+                    {glyphs.map(g => (
+                        <div key={g.id} className="bg-slate-900/40 border border-slate-800 p-6 rounded-3xl flex justify-between">
+                            <div className="min-w-0"><h4 className="font-black text-white text-lg">{g.code}</h4><p className="text-[10px] text-slate-500 truncate">{g.content}</p></div>
+                            <Icon path={paths.zap} className="text-sky-900" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+
+        const App = () => {
+            const [view, setView] = useState('LENS');
+            const [glyphs, setGlyphs] = useState([]);
+            const [user, setUser] = useState(null);
+
+            useEffect(() => {
+                auth.signInAnonymously().then(cred => {
+                    setUser(cred.user);
+                    db.collection(PUBLIC_PATH).orderBy('timestamp', 'desc').onSnapshot(s => setGlyphs(s.docs.map(d => ({...d.data(), id: d.id}))));
+                });
+            }, []);
+
+            return (
+                <div className="h-screen w-full flex flex-col bg-[#020617]">
+                    <main className="flex-1 relative overflow-hidden">
+                        {view === 'LENS' && <LinkLens glyphs={glyphs} />}
+                        {view === 'FORGE' && <Forge user={user} />}
+                        {view === 'REGISTRY' && <Registry glyphs={glyphs} />}
+                    </main>
+                    <nav className="h-24 bg-slate-950/80 backdrop-blur-2xl border-t border-white/5 flex justify-around items-center px-6 safe-pb z-50">
+                        <button onClick={() => setView('FORGE')} className={view === 'FORGE' ? 'text-sky-400' : 'text-slate-600'}><Icon path={paths.plus} /></button>
+                        <button onClick={() => setView('LENS')} className={`w-16 h-16 rounded-[1.8rem] -mt-12 rotate-45 border-4 border-[#020617] flex items-center justify-center ${view === 'LENS' ? 'bg-sky-500' : 'bg-slate-800'}`}><div className="-rotate-45 text-white"><Icon path={paths.cam} /></div></button>
+                        <button onClick={() => setView('REGISTRY')} className={view === 'REGISTRY' ? 'text-sky-400' : 'text-slate-600'}><Icon path={paths.list} /></button>
+                    </nav>
+                </div>
+            );
+        };
+        createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
+
