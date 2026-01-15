@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Countdown to April 21, 2026</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;600&display=swap" rel="stylesheet">
+    <style>
+        /* CSS: The Aesthetic & Styling */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            /* Elegant dark gradient background */
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            font-family: 'Poppins', sans-serif;
+            color: #ffffff;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px); /* Glass effect */
+            padding: 3rem 4rem;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            font-weight: 300;
+            letter-spacing: 2px;
+            margin-bottom: 2rem;
+            text-transform: uppercase;
+            font-size: 1.5rem;
+        }
+
+        .countdown-wrapper {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+        }
+
+        .time-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .number {
+            font-size: 4rem;
+            font-weight: 600;
+            line-height: 1;
+            background: -webkit-linear-gradient(#fff, #aebaf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.7;
+            margin-top: 0.5rem;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 600px) {
+            .countdown-wrapper {
+                flex-wrap: wrap;
+                gap: 1.5rem;
+            }
+            .number {
+                font-size: 2.5rem;
+            }
+            .container {
+                padding: 2rem;
+                width: 90%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>SSC 2026 Target</h1> <div class="countdown-wrapper" id="countdown">
+            <div class="time-box">
+                <span class="number" id="days">00</span>
+                <span class="label">Days</span>
+            </div>
+            <div class="time-box">
+                <span class="number" id="hours">00</span>
+                <span class="label">Hours</span>
+            </div>
+            <div class="time-box">
+                <span class="number" id="minutes">00</span>
+                <span class="label">Minutes</span>
+            </div>
+            <div class="time-box">
+                <span class="number" id="seconds">00</span>
+                <span class="label">Seconds</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JS: The Logic
+        const countdown = () => {
+            const countDate = new Date("April 21, 2026 00:00:00").getTime();
+            const now = new Date().getTime();
+            const gap = countDate - now;
+
+            // Time calculations
+            const second = 1000;
+            const minute = second * 60;
+            const hour = minute * 60;
+            const day = hour * 24;
+
+            // Calculate display numbers
+            const textDay = Math.floor(gap / day);
+            const textHour = Math.floor((gap % day) / hour);
+            const textMinute = Math.floor((gap % hour) / minute);
+            const textSecond = Math.floor((gap % minute) / second);
+
+            // Update DOM with zero padding
+            document.getElementById("days").innerText = textDay < 10 ? '0' + textDay : textDay;
+            document.getElementById("hours").innerText = textHour < 10 ? '0' + textHour : textHour;
+            document.getElementById("minutes").innerText = textMinute < 10 ? '0' + textMinute : textMinute;
+            document.getElementById("seconds").innerText = textSecond < 10 ? '0' + textSecond : textSecond;
+        };
+
+        // Run immediately and then every second
+        setInterval(countdown, 1000);
+        countdown();
+    </script>
+</body>
+</html>
